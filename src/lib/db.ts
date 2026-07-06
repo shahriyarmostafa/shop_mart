@@ -10,31 +10,36 @@ const client = createClient({
 });
 
 const dbAdapter = {
-  exec: (sql: string) => {
-    client.executeMultiple(sql).catch((err: any) => console.error("Migration error:", err));
+  exec: async (sql: string) => {
+    return await client.executeMultiple(sql);
   },
   prepare: (sql: string) => {
     return {
-      all: (...params: any[]) => {
-        // Simple synchronous wrapper placeholder for existing calls
-        return [] as any; 
+      all: async (...params: any[]) => {
+        const result = await client.execute({ sql, args: params });
+        return result.rows;
       },
-      get: (slug: string) => { return undefined; },
-      run: (...params: any[]) => {}
+      get: async (...params: any[]) => {
+        const result = await client.execute({ sql, args: params });
+        return result.rows[0];
+      },
+      run: async (...params: any[]) => {
+        return await client.execute({ sql, args: params });
+      }
     };
   }
 };
 
-function getDb() {
+async function getDb() {
   if (!(global as any).__dbInitialized) {
-    migrate(dbAdapter as any);
+    await migrate(dbAdapter as any);
     (global as any).__dbInitialized = true;
   }
   return dbAdapter;
 }
 
-function migrate(db: any) {
-  db.exec(`
+async function migrate(db: any) {
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -157,12 +162,15 @@ function rowToProduct(row: any): DBProduct {
 }
 
 // ---------- Categories ----------
-export function getCategories(): DBCategory[] {
-  return getDb().prepare('SELECT * FROM categories ORDER BY name ASC').all() as unknown as DBCategory[];
+export async function getCategories(): Promise<DBCategory[]> {
+  const db = await getDb();
+  const rows = await db.prepare('SELECT * FROM categories ORDER BY name ASC').all();
+  return rows as unknown as DBCategory[];
 }
 
-export function getCategoriesWithCounts(): (DBCategory & { productCount: number })[] {
-  const rows = getDb()
+export async function getCategoriesWithCounts(): Promise<(DBCategory & { productCount: number })[]> {
+  const db = await getDb();
+  const rows = await db
     .prepare(
       `SELECT c.*, (SELECT COUNT(*) FROM products p WHERE p.categoryId = c.id) as productCount
        FROM categories c ORDER BY c.name ASC`
@@ -171,16 +179,19 @@ export function getCategoriesWithCounts(): (DBCategory & { productCount: number 
   return rows as unknown as (DBCategory & { productCount: number })[];
 }
 
-export function getCategoryBySlug(slug: string): DBCategory | undefined {
-  return getDb().prepare('SELECT * FROM categories WHERE slug = ?').get(slug) as DBCategory | undefined;
+export async function getCategoryBySlug(slug: string): Promise<DBCategory | undefined> {
+  const db = await getDb();
+  const row = await db.prepare('SELECT * FROM categories WHERE slug = ?').get(slug);
+  return row as unknown as DBCategory | undefined;
 }
 
-export function createCategory(data: { name: string; slug: string; icon?: string; image?: string }): DBCategory {
+export async function createCategory(data: { name: string; slug: string; icon?: string; image?: string }): Promise<DBCategory> {
+  const db = await getDb();
   const id = randomUUID();
-  getDb()
+  await db
     .prepare('INSERT INTO categories (id, name, slug, icon, image) VALUES (?, ?, ?, ?, ?)')
     .run(id, data.name, data.slug, data.icon || 'Package', data.image || null);
-  return getCategoryBySlug(data.slug)!;
+  return (await getCategoryBySlug(data.slug))!;
 }
 
 // ---------- Products ----------
@@ -192,7 +203,8 @@ type ProductFilter = {
   limit?: number;
 };
 
-export function getProducts(filter: ProductFilter = {}): DBProduct[] {
+export async function getProducts(filter: ProductFilter = {}): Promise<DBProduct[]> {
+  const db = await getDb();
   const clauses: string[] = [];
   const params: any[] = [];
 
@@ -219,30 +231,34 @@ export function getProducts(filter: ProductFilter = {}): DBProduct[] {
   const limit = filter.limit ? `LIMIT ${filter.limit}` : '';
 
   const sql = `SELECT p.* FROM products p ${joinCategory} ${where} ORDER BY ${orderBy} ${limit}`;
-  const rows = getDb().prepare(sql).all(...params);
+  const rows = await db.prepare(sql).all(...params);
   return rows.map(rowToProduct);
 }
 
-export function getProductBySlug(slug: string): (DBProduct & { category: DBCategory }) | undefined {
-  const row = getDb().prepare('SELECT * FROM products WHERE slug = ?').get(slug) as any;
+export async function getProductBySlug(slug: string): Promise<(DBProduct & { category: DBCategory }) | undefined> {
+  const db = await getDb();
+  const row = await db.prepare('SELECT * FROM products WHERE slug = ?').get(slug) as any;
   if (!row) return undefined;
-  const category = (getDb().prepare('SELECT * FROM categories WHERE id = ?') as any).get(row.categoryId) as DBCategory;
+  const categoryPrepared = db.prepare('SELECT * FROM categories WHERE id = ?');
+  const category = (await categoryPrepared.get(row.categoryId)) as unknown as DBCategory;
   return { ...rowToProduct(row), category };
 }
 
-export function getProductById(id: string): DBProduct | undefined {
-  const row = getDb().prepare('SELECT * FROM products WHERE id = ?').get(id) as any;
+export async function getProductById(id: string): Promise<DBProduct | undefined> {
+  const db = await getDb();
+  const row = await db.prepare('SELECT * FROM products WHERE id = ?').get(id) as any;
   return row ? rowToProduct(row) : undefined;
 }
 
-export function getRelatedProducts(categoryId: string, excludeId: string, limit = 5): DBProduct[] {
-  const rows = getDb()
+export async function getRelatedProducts(categoryId: string, excludeId: string, limit = 5): Promise<DBProduct[]> {
+  const db = await getDb();
+  const rows = await db
     .prepare('SELECT * FROM products WHERE categoryId = ? AND id != ? LIMIT ?')
     .all(categoryId, excludeId, limit);
   return rows.map(rowToProduct);
 }
 
-export function createProduct(data: {
+export async function createProduct(data: {
   name: string;
   description: string;
   price: number;
@@ -251,13 +267,14 @@ export function createProduct(data: {
   images: string;
   categoryId: string;
   featured?: boolean;
-}): DBProduct {
+}): Promise<DBProduct> {
+  const db = await getDb();
   const id = randomUUID();
   const slug =
     data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '-' + Math.random().toString(36).slice(2, 6);
   const createdAt = new Date().toISOString();
 
-  getDb()
+  await db
     .prepare(
       `INSERT INTO products (id, name, slug, description, price, compareAtPrice, stock, images, rating, reviewCount, featured, categoryId, createdAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -278,10 +295,11 @@ export function createProduct(data: {
       createdAt
     );
 
-  return getProductById(id)!;
+  return (await getProductById(id))!;
 }
 
-export function updateProduct(id: string, data: Partial<DBProduct>): void {
+export async function updateProduct(id: string, data: Partial<DBProduct>): Promise<void> {
+  const db = await getDb();
   const fields = Object.keys(data).filter((k) => k !== 'id');
   if (!fields.length) return;
   const setClause = fields.map((f) => `${f} = ?`).join(', ');
@@ -289,61 +307,78 @@ export function updateProduct(id: string, data: Partial<DBProduct>): void {
     const v = (data as any)[f];
     return typeof v === 'boolean' ? (v ? 1 : 0) : v;
   });
-  getDb().prepare(`UPDATE products SET ${setClause} WHERE id = ?`).run(...values, id);
+  await db.prepare(`UPDATE products SET ${setClause} WHERE id = ?`).run(...values, id);
 }
 
-export function deleteProduct(id: string): void {
-  getDb().prepare('DELETE FROM products WHERE id = ?').run(id);
+export async function deleteProduct(id: string): Promise<void> {
+  const db = await getDb();
+  await db.prepare('DELETE FROM products WHERE id = ?').run(id);
 }
 
 // ---------- Users ----------
-export function getUserByEmail(email: string): DBUser | undefined {
-  return getDb().prepare('SELECT * FROM users WHERE email = ?').get(email) as DBUser | undefined;
+export async function getUserByEmail(email: string): Promise<DBUser | undefined> {
+  const db = await getDb();
+  const row = await db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  return row as unknown as DBUser | undefined;
 }
 
-export function getUserById(id: string): DBUser | undefined {
-  return getDb().prepare('SELECT * FROM users WHERE id = ?').get(id) as DBUser | undefined;
+export async function getUserById(id: string): Promise<DBUser | undefined> {
+  const db = await getDb();
+  const row = await db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  return row as unknown as DBUser | undefined;
 }
 
-export function createUser(data: { name: string; email: string; password: string; role?: string }): DBUser {
+export async function createUser(data: { name: string; email: string; password: string; role?: string }): Promise<DBUser> {
+  const db = await getDb();
   const id = randomUUID();
   const createdAt = new Date().toISOString();
-  getDb()
+  await db
     .prepare('INSERT INTO users (id, name, email, password, role, createdAt) VALUES (?, ?, ?, ?, ?, ?)')
     .run(id, data.name, data.email, data.password, data.role || 'CUSTOMER', createdAt);
-  return getUserByEmail(data.email)!;
+  return (await getUserByEmail(data.email))!;
 }
 
 // ---------- Orders ----------
-export function getOrdersForUser(userId: string): (DBOrder & { items: (DBOrderItem & { product: DBProduct })[] })[] {
-  const orders = getDb()
+export async function getOrdersForUser(
+  userId: string
+): Promise<(DBOrder & { items: (DBOrderItem & { product: DBProduct })[] })[]> {
+  const db = await getDb();
+  const orders = (await db
     .prepare('SELECT * FROM orders WHERE userId = ? ORDER BY createdAt DESC')
-    .all(userId) as unknown as DBOrder[];
+    .all(userId)) as unknown as DBOrder[];
   return attachItems(orders);
 }
 
-export function getAllOrders(): (DBOrder & { items: (DBOrderItem & { product: DBProduct })[] })[] {
-  const orders = getDb().prepare('SELECT * FROM orders ORDER BY createdAt DESC').all() as unknown as DBOrder[];
+export async function getAllOrders(): Promise<(DBOrder & { items: (DBOrderItem & { product: DBProduct })[] })[]> {
+  const db = await getDb();
+  const orders = (await db.prepare('SELECT * FROM orders ORDER BY createdAt DESC').all()) as unknown as DBOrder[];
   return attachItems(orders);
 }
 
-function attachItems(orders: DBOrder[]) {
-  const db = getDb();
-  return orders.map((order) => {
-    const items = db.prepare('SELECT * FROM order_items WHERE orderId = ?').all(order.id) as unknown as DBOrderItem[];
-    const itemsWithProduct = items.map((item) => ({
-      ...item,
-      product: rowToProduct(db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId)),
-    }));
-    return { ...order, items: itemsWithProduct };
-  });
+async function attachItems(orders: DBOrder[]) {
+  const db = await getDb();
+  return Promise.all(
+    orders.map(async (order) => {
+      const items = (await db
+        .prepare('SELECT * FROM order_items WHERE orderId = ?')
+        .all(order.id)) as unknown as DBOrderItem[];
+      const itemsWithProduct = await Promise.all(
+        items.map(async (item) => ({
+          ...item,
+          product: rowToProduct(await db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId)),
+        }))
+      );
+      return { ...order, items: itemsWithProduct };
+    })
+  );
 }
 
-export function updateOrderStatus(id: string, status: string): void {
-  getDb().prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, id);
+export async function updateOrderStatus(id: string, status: string): Promise<void> {
+  const db = await getDb();
+  await db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, id);
 }
 
-export function createOrder(data: {
+export async function createOrder(data: {
   userId: string;
   items: { productId: string; quantity: number }[];
   shippingName: string;
@@ -351,32 +386,32 @@ export function createOrder(data: {
   shippingAddress: string;
   paymentMethod: string;
 }) {
-  const db = getDb();
-  db.exec('BEGIN');
+  const db = await getDb();
+  await db.exec('BEGIN');
   try {
     let total = 0;
     const resolvedItems: { productId: string; quantity: number; price: number; name: string }[] = [];
 
     for (const item of data.items) {
-      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId) as any;
+      const product = (await db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId)) as any;
       if (!product) throw new Error(`Product not found: ${item.productId}`);
       if (product.stock < item.quantity) {
         throw new Error(`Not enough stock for ${product.name}. Only ${product.stock} left.`);
       }
       total += product.price * item.quantity;
       resolvedItems.push({ productId: product.id, quantity: item.quantity, price: product.price, name: product.name });
-      db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?').run(item.quantity, product.id);
+      await db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?').run(item.quantity, product.id);
     }
 
     const orderId = randomUUID();
     const createdAt = new Date().toISOString();
-    db.prepare(
+    await db.prepare(
       `INSERT INTO orders (id, userId, status, paymentMethod, total, shippingName, shippingPhone, shippingAddress, createdAt)
        VALUES (?, 'PENDING', ?, ?, ?, ?, ?, ?, ?)`
     ).run(orderId, data.paymentMethod, total, data.shippingName, data.shippingPhone, data.shippingAddress, createdAt);
 
     for (const item of resolvedItems) {
-      db.prepare('INSERT INTO order_items (id, orderId, productId, quantity, price) VALUES (?, ?, ?, ?, ?)').run(
+      await db.prepare('INSERT INTO order_items (id, orderId, productId, quantity, price) VALUES (?, ?, ?, ?, ?)').run(
         randomUUID(),
         orderId,
         item.productId,
@@ -385,17 +420,17 @@ export function createOrder(data: {
       );
     }
 
-    db.exec('COMMIT');
+    await db.exec('COMMIT');
     return { id: orderId, total };
   } catch (err) {
-    db.exec('ROLLBACK');
+    await db.exec('ROLLBACK');
     throw err;
   }
 }
 
-export function resetDatabase(): void {
-  const db = getDb();
-  db.exec('DELETE FROM order_items; DELETE FROM orders; DELETE FROM products; DELETE FROM categories; DELETE FROM users;');
+export async function resetDatabase(): Promise<void> {
+  const db = await getDb();
+  await db.exec('DELETE FROM order_items; DELETE FROM orders; DELETE FROM products; DELETE FROM categories; DELETE FROM users;');
 }
 
 export { getDb };

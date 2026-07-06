@@ -65,22 +65,22 @@ const productsByCategory: Record<string, { name: string; price: number; compareA
 
 async function main() {
   console.log('Seeding database...');
-  getDb();
-  resetDatabase();
+  await getDb();
+  await resetDatabase();
 
   const adminPassword = await bcrypt.hash('admin123', 10);
-  createUser({ name: 'Store Admin', email: 'admin@shopmart.test', password: adminPassword, role: 'ADMIN' });
+  await createUser({ name: 'Store Admin', email: 'admin@shopmart.test', password: adminPassword, role: 'ADMIN' });
 
   const demoPassword = await bcrypt.hash('demo1234', 10);
-  createUser({ name: 'Demo Customer', email: 'demo@shopmart.test', password: demoPassword, role: 'CUSTOMER' });
+  await createUser({ name: 'Demo Customer', email: 'demo@shopmart.test', password: demoPassword, role: 'CUSTOMER' });
 
   for (const cat of categories) {
-    const created = createCategory({ name: cat.name, slug: cat.slug, icon: cat.icon, image: img(cat.slug) });
+    const created = await createCategory({ name: cat.name, slug: cat.slug, icon: cat.icon, image: img(cat.slug) });
 
     const items = productsByCategory[cat.slug];
     for (const p of items) {
       const seedKey = p.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-      const product = createProduct({
+      const product = await createProduct({
         name: p.name,
         description: p.desc,
         price: p.price,
@@ -93,7 +93,9 @@ async function main() {
       // set randomized rating/review count directly since createProduct defaults them
       const rating = Math.round((4 + Math.random()) * 10) / 10;
       const reviewCount = Math.floor(Math.random() * 400) + 5;
-      getDb().prepare('UPDATE products SET rating = ?, reviewCount = ? WHERE id = ?').run(rating, reviewCount, product.id);
+      
+      const db = await getDb();
+      await db.prepare('UPDATE products SET rating = ?, reviewCount = ? WHERE id = ?').run(rating, reviewCount, product.id);
     }
   }
 
