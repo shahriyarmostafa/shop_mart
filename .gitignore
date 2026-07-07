@@ -1,5 +1,6 @@
 node_modules/
 .next/
+data/shop.db
 data/shop.db-wal
 data/shop.db-shm
 .env.local

@@ -8,7 +8,7 @@ export async function GET(req: Request) {
   const featured = searchParams.get('featured') === 'true';
   const sort = searchParams.get('sort') || undefined;
 
-  const products = getProducts({ categorySlug: category, search, featured, sort });
+  const products = await getProducts({ categorySlug: category, search, featured, sort });
   return NextResponse.json(products);
 }
 
@@ -21,7 +21,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 });
     }
 
-    const product = createProduct({
+    const product = await createProduct({
       name,
       description,
       price: parseFloat(price),
