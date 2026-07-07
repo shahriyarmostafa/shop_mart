@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   const all = searchParams.get('all');
   const isAdmin = (session.user as any).role === 'ADMIN';
 
-  const orders = all === 'true' && isAdmin ? getAllOrders() : getOrdersForUser((session.user as any).id);
+  const orders = all === 'true' && isAdmin ? await getAllOrders() : await getOrdersForUser((session.user as any).id);
 
   return NextResponse.json(orders);
 }

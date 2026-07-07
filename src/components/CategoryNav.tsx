@@ -2,8 +2,10 @@ import Link from 'next/link';
 import { getCategories } from '@/lib/db';
 import * as Icons from 'lucide-react';
 
-export default function CategoryNav() {
-  const categories = getCategories();
+// 1. Mark the component as 'async'
+export default async function CategoryNav() {
+  // 2. 'await' the database call
+  const categories = await getCategories();
 
   return (
     <nav className="bg-white border-b border-ink-100">

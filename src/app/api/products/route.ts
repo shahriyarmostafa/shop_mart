@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getProducts, createProduct } from '@/lib/db';
+import { getProducts, createProduct, getCategories } from '@/lib/db';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -8,8 +8,17 @@ export async function GET(req: Request) {
   const featured = searchParams.get('featured') === 'true';
   const sort = searchParams.get('sort') || undefined;
 
-  const products = getProducts({ categorySlug: category, search, featured, sort });
-  return NextResponse.json(products);
+  const products = await getProducts({ categorySlug: category, search, featured, sort });
+
+  // Attach category info for consumers like the admin dashboard table.
+  const categories = await getCategories();
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
+  const withCategory = products.map((p) => ({
+    ...p,
+    category: categoryById.get(p.categoryId) || { name: 'Uncategorized', slug: '' },
+  }));
+
+  return NextResponse.json(withCategory);
 }
 
 export async function POST(req: Request) {
@@ -21,7 +30,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 });
     }
 
-    const product = createProduct({
+    const product = await createProduct({
       name,
       description,
       price: parseFloat(price),

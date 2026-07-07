@@ -2,8 +2,10 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { getCategoriesWithCounts } from '@/lib/db';
 
-export default function CategoryGrid() {
-  const categories = getCategoriesWithCounts();
+// 1. Mark the component as 'async'
+export default async function CategoryGrid() {
+  // 2. 'await' the database call
+  const categories = await getCategoriesWithCounts();
 
   return (
     <section className="max-w-7xl mx-auto px-4 py-10">

@@ -13,7 +13,7 @@ type Product = {
   price: number;
   stock: number;
   images: string;
-  category: { name: string };
+  category?: { name: string };
 };
 
 type Order = { id: string; total: number; status: string };
@@ -115,11 +115,13 @@ export default function AdminPage() {
               <tr key={p.id} className="border-t border-ink-50">
                 <td className="px-4 py-3 flex items-center gap-3">
                   <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-ink-50 shrink-0">
-                    <Image src={p.images.split(',')[0]} alt={p.name} fill sizes="40px" className="object-cover" />
+                    {p.images && (
+                      <Image src={p.images.split(',')[0]} alt={p.name} fill sizes="40px" className="object-cover" />
+                    )}
                   </div>
                   <span className="line-clamp-1">{p.name}</span>
                 </td>
-                <td className="px-4 py-3 text-ink-400">{p.category.name}</td>
+                <td className="px-4 py-3 text-ink-400">{p.category?.name ?? '—'}</td>
                 <td className="px-4 py-3 font-mono">{formatPrice(p.price)}</td>
                 <td className="px-4 py-3">{p.stock}</td>
                 <td className="px-4 py-3 text-right">
