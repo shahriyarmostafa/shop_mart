@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+<<<<<<< HEAD
 import { getProducts, createProduct, getCategories, type VariantInput } from '@/lib/db';
 
 /**
@@ -55,6 +56,9 @@ function parseVariants(raw: unknown): { variants?: VariantInput[]; error?: strin
 
   return { variants };
 }
+=======
+import { getProducts, createProduct, getCategories } from '@/lib/db';
+>>>>>>> 0aa5166dbf7e53befa6a172643afb9ad643cf5fd
 
 export async function GET(req: Request) {
   try {
@@ -95,12 +99,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
     }
 
+<<<<<<< HEAD
     const { name, description, price, compareAtPrice, stock, images, categoryId, featured, variants } = body || {};
 
     const { variants: parsedVariants, error: variantsError } = parseVariants(variants);
     if (variantsError) {
       return NextResponse.json({ error: variantsError }, { status: 400 });
     }
+=======
+    const { name, description, price, compareAtPrice, stock, images, categoryId, featured } = body || {};
+>>>>>>> 0aa5166dbf7e53befa6a172643afb9ad643cf5fd
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       return NextResponse.json({ error: 'Product name is required.' }, { status: 400 });

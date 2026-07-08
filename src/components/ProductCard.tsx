@@ -2,7 +2,11 @@
 
 import Link from 'next/link';
 import SafeImage from '@/components/SafeImage';
+<<<<<<< HEAD
 import { Star, ShoppingCart, SlidersHorizontal } from 'lucide-react';
+=======
+import { Star, ShoppingCart } from 'lucide-react';
+>>>>>>> 0aa5166dbf7e53befa6a172643afb9ad643cf5fd
 import { formatPrice, discountPercent } from '@/lib/utils';
 import { useCartStore } from '@/lib/cart-store';
 

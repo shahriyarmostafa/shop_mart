@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+<<<<<<< HEAD
 import { getProductById, updateProduct, deleteProduct, replaceVariantsForProduct, type VariantInput } from '@/lib/db';
 
 /**
@@ -56,6 +57,9 @@ function parseVariants(raw: unknown): { variants?: VariantInput[]; error?: strin
 
   return { variants, provided: true };
 }
+=======
+import { getProductById, updateProduct, deleteProduct } from '@/lib/db';
+>>>>>>> 0aa5166dbf7e53befa6a172643afb9ad643cf5fd
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   try {
@@ -96,11 +100,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
     }
 
+<<<<<<< HEAD
     const { variants: parsedVariants, error: variantsError, provided: variantsProvided } = parseVariants(body.variants);
     if (variantsError) {
       return NextResponse.json({ error: variantsError }, { status: 400 });
     }
 
+=======
+>>>>>>> 0aa5166dbf7e53befa6a172643afb9ad643cf5fd
     const update: Record<string, any> = {};
 
     for (const field of EDITABLE_FIELDS) {
@@ -151,10 +158,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           break;
         }
         case 'stock': {
+<<<<<<< HEAD
           // If variants were also submitted, their combined stock is the
           // real source of truth and will overwrite this right after -
           // still validate the submitted value so a malformed request
           // fails loudly instead of silently.
+=======
+>>>>>>> 0aa5166dbf7e53befa6a172643afb9ad643cf5fd
           const parsed = parseInt(value, 10);
           if (value === '' || value === null || value === undefined || Number.isNaN(parsed) || parsed < 0) {
             return NextResponse.json({ error: 'A valid, non-negative stock quantity is required.' }, { status: 400 });
@@ -168,6 +178,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       }
     }
 
+<<<<<<< HEAD
     if (Object.keys(update).length === 0 && !variantsProvided) {
       return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 });
     }
@@ -182,6 +193,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       await replaceVariantsForProduct(params.id, parsedVariants!);
     }
 
+=======
+    if (Object.keys(update).length === 0) {
+      return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 });
+    }
+
+    await updateProduct(params.id, update);
+>>>>>>> 0aa5166dbf7e53befa6a172643afb9ad643cf5fd
     return NextResponse.json(await getProductById(params.id));
   } catch (err) {
     console.error('[PATCH /api/products/:id] failed:', err);

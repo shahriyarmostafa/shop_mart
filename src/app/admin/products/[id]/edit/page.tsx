@@ -50,6 +50,7 @@ export default function EditProductPage() {
           images: typeof data.images === 'string' && data.images.length ? data.images.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
           categoryId: data.categoryId ?? '',
           featured: !!data.featured,
+<<<<<<< HEAD
           variants: Array.isArray(data.variants)
             ? data.variants.map((v: any) => ({
                 key: v.id ?? Math.random().toString(36).slice(2),
@@ -60,6 +61,8 @@ export default function EditProductPage() {
                 image: v.image ?? '',
               }))
             : [],
+=======
+>>>>>>> 0aa5166dbf7e53befa6a172643afb9ad643cf5fd
         });
       } catch {
         if (!cancelled) {
