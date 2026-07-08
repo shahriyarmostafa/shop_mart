@@ -1,6 +1,6 @@
 import { getProductBySlug, getRelatedProducts } from '@/lib/db';
 import { notFound } from 'next/navigation';
-import Image from 'next/image';
+import SafeImage from '@/components/SafeImage';
 import Link from 'next/link';
 import { Star } from 'lucide-react';
 import CategoryNav from '@/components/CategoryNav';
@@ -8,11 +8,11 @@ import AddToCartPanel from '@/components/AddToCartPanel';
 import ProductCard from '@/components/ProductCard';
 import { formatPrice, discountPercent } from '@/lib/utils';
 
-export default function ProductPage({ params }: { params: { slug: string } }) {
-  const product = getProductBySlug(params.slug);
+export default async function ProductPage({ params }: { params: { slug: string } }) {
+  const product = await getProductBySlug(params.slug);
   if (!product) notFound();
 
-  const related = getRelatedProducts(product.categoryId, product.id, 5);
+  const related = await getRelatedProducts(product.categoryId, product.id, 5);
   const images = product.images.split(',');
   const discount = discountPercent(product.price, product.compareAtPrice);
 
@@ -30,7 +30,7 @@ export default function ProductPage({ params }: { params: { slug: string } }) {
           <div className="grid grid-cols-2 gap-3">
             {images.map((img, i) => (
               <div key={i} className={`relative aspect-square rounded-xl overflow-hidden bg-ink-50 ${i === 0 ? 'col-span-2' : ''}`}>
-                <Image src={img} alt={`${product.name} ${i + 1}`} fill sizes="500px" className="object-cover" />
+                <SafeImage src={img} alt={`${product.name} ${i + 1}`} fill sizes="500px" className="object-cover" />
               </div>
             ))}
           </div>

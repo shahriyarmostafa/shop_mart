@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
+import SafeImage from '@/components/SafeImage';
 import { Star, ShoppingCart } from 'lucide-react';
 import { formatPrice, discountPercent } from '@/lib/utils';
 import { useCartStore } from '@/lib/cart-store';
@@ -26,7 +26,7 @@ export default function ProductCard({ product }: { product: Product }) {
   return (
     <div className="group bg-white rounded-xl overflow-hidden shadow-card hover:shadow-lg transition-shadow border border-ink-50">
       <Link href={`/product/${product.slug}`} className="block relative aspect-square overflow-hidden bg-ink-50">
-        <Image
+        <SafeImage
           src={image}
           alt={product.name}
           fill

@@ -4,11 +4,11 @@ import HeroBanner from '@/components/HeroBanner';
 import CategoryGrid from '@/components/CategoryGrid';
 import ProductCard from '@/components/ProductCard';
 
-export default function HomePage({ searchParams }: { searchParams: { q?: string } }) {
+export default async function HomePage({ searchParams }: { searchParams: { q?: string } }) {
   const query = searchParams.q;
 
   if (query) {
-    const results = getProducts({ search: query });
+    const results = await getProducts({ search: query });
 
     return (
       <>
@@ -32,8 +32,8 @@ export default function HomePage({ searchParams }: { searchParams: { q?: string 
     );
   }
 
-  const featured = getProducts({ featured: true, limit: 10 });
-  const latest = getProducts({ limit: 10 });
+  const featured = await getProducts({ featured: true, limit: 10 });
+  const latest = await getProducts({ limit: 10 });
 
   return (
     <>

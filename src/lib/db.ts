@@ -1,8 +1,22 @@
 import { createClient } from '@libsql/client';
 import { randomUUID } from 'crypto';
 
+// Next.js's own CLI (next dev/build/start) auto-loads .env, but running this
+// module via plain `tsx` (e.g. the seed script) does not. Without this, the
+// seed script and the app can silently point at different databases.
+try {
+  process.loadEnvFile();
+} catch {
+  // No .env file present - expected on Vercel/production, where env vars
+  // are injected directly rather than read from a file.
+}
+
 const url = process.env.DATABASE_URL || "file:./data/shop.db";
 const authToken = process.env.DATABASE_AUTH_TOKEN;
+
+if (process.env.NODE_ENV !== 'production') {
+  console.log(`[db] connecting to: ${url.startsWith('file:') ? url : url.replace(/\/\/.*@/, '//***@')}`);
+}
 
 const client = createClient({
   url: url,
@@ -386,45 +400,45 @@ export async function createOrder(data: {
   shippingAddress: string;
   paymentMethod: string;
 }) {
-  const db = await getDb();
-  await db.exec('BEGIN');
+  const tx = await client.transaction('write');
   try {
     let total = 0;
     const resolvedItems: { productId: string; quantity: number; price: number; name: string }[] = [];
 
     for (const item of data.items) {
-      const product = (await db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId)) as any;
+      const result = await tx.execute({ sql: 'SELECT * FROM products WHERE id = ?', args: [item.productId] });
+      const product = result.rows[0] as any;
       if (!product) throw new Error(`Product not found: ${item.productId}`);
-      if (product.stock < item.quantity) {
+      if ((product.stock as number) < item.quantity) {
         throw new Error(`Not enough stock for ${product.name}. Only ${product.stock} left.`);
       }
-      total += product.price * item.quantity;
-      resolvedItems.push({ productId: product.id, quantity: item.quantity, price: product.price, name: product.name });
-      await db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?').run(item.quantity, product.id);
+      total += (product.price as number) * item.quantity;
+      resolvedItems.push({ productId: product.id, quantity: item.quantity, price: product.price as number, name: product.name as string });
+      await tx.execute({ sql: 'UPDATE products SET stock = stock - ? WHERE id = ?', args: [item.quantity, product.id] });
     }
 
     const orderId = randomUUID();
     const createdAt = new Date().toISOString();
-    await db.prepare(
-      `INSERT INTO orders (id, userId, status, paymentMethod, total, shippingName, shippingPhone, shippingAddress, createdAt)
-       VALUES (?, 'PENDING', ?, ?, ?, ?, ?, ?, ?)`
-    ).run(orderId, data.paymentMethod, total, data.shippingName, data.shippingPhone, data.shippingAddress, createdAt);
+    await tx.execute({
+      sql: `INSERT INTO orders (id, userId, status, paymentMethod, total, shippingName, shippingPhone, shippingAddress, createdAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [orderId, data.userId, 'PENDING', data.paymentMethod, total, data.shippingName, data.shippingPhone, data.shippingAddress, createdAt],
+    });
 
     for (const item of resolvedItems) {
-      await db.prepare('INSERT INTO order_items (id, orderId, productId, quantity, price) VALUES (?, ?, ?, ?, ?)').run(
-        randomUUID(),
-        orderId,
-        item.productId,
-        item.quantity,
-        item.price
-      );
+      await tx.execute({
+        sql: 'INSERT INTO order_items (id, orderId, productId, quantity, price) VALUES (?, ?, ?, ?, ?)',
+        args: [randomUUID(), orderId, item.productId, item.quantity, item.price],
+      });
     }
 
-    await db.exec('COMMIT');
+    await tx.commit();
     return { id: orderId, total };
   } catch (err) {
-    await db.exec('ROLLBACK');
+    await tx.rollback();
     throw err;
+  } finally {
+    tx.close();
   }
 }
 

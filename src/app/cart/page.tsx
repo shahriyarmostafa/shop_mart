@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
+import SafeImage from '@/components/SafeImage';
 import { Minus, Plus, Trash2, ShoppingBag } from 'lucide-react';
 import { useCartStore } from '@/lib/cart-store';
 import { formatPrice } from '@/lib/utils';
@@ -38,7 +38,7 @@ export default function CartPage() {
           {items.map((item) => (
             <div key={item.productId} className="flex gap-4 bg-white rounded-xl p-3 shadow-card">
               <div className="relative w-20 h-20 rounded-lg overflow-hidden bg-ink-50 shrink-0">
-                <Image src={item.image} alt={item.name} fill sizes="80px" className="object-cover" />
+                <SafeImage src={item.image} alt={item.name} fill sizes="80px" className="object-cover" />
               </div>
               <div className="flex-1 min-w-0">
                 <h3 className="text-sm font-medium text-ink-700 line-clamp-2">{item.name}</h3>
