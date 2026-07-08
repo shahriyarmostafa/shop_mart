@@ -1,5 +1,6 @@
 import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
+import GoogleProvider from 'next-auth/providers/google'; // <-- 1. Import the Google provider
 import bcrypt from 'bcryptjs';
 import { getUserByEmail } from '@/lib/db';
 
@@ -9,6 +10,11 @@ export const authOptions: NextAuthOptions = {
     signIn: '/login',
   },
   providers: [
+    // 2. Drop the Google provider here linked to your .env keys
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID || '',
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+    }),
     CredentialsProvider({
       name: 'Credentials',
       credentials: {
@@ -31,10 +37,10 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
       if (user) {
-        token.id = (user as any).id;
-        token.role = (user as any).role;
+        token.id = (user as any).id || token.sub; // token.sub is the unique ID Google gives back
+        token.role = (user as any).role || 'user'; // Assign a default 'user' role for Google accounts
       }
       return token;
     },
