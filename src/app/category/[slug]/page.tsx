@@ -4,17 +4,17 @@ import ProductCard from '@/components/ProductCard';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 
-export default function CategoryPage({
+export default async function CategoryPage({
   params,
   searchParams,
 }: {
   params: { slug: string };
   searchParams: { sort?: string };
 }) {
-  const category = getCategoryBySlug(params.slug);
+  const category = await getCategoryBySlug(params.slug);
   if (!category) notFound();
 
-  const products = getProducts({ categorySlug: params.slug, sort: searchParams.sort });
+  const products = await getProducts({ categorySlug: params.slug, sort: searchParams.sort });
 
   const sortOptions = [
     { value: '', label: 'Newest' },

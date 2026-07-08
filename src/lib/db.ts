@@ -1,8 +1,22 @@
 import { createClient } from '@libsql/client';
 import { randomUUID } from 'crypto';
 
+// Next.js's own CLI (next dev/build/start) auto-loads .env, but running this
+// module via plain `tsx` (e.g. the seed script) does not. Without this, the
+// seed script and the app can silently point at different databases.
+try {
+  process.loadEnvFile();
+} catch {
+  // No .env file present - expected on Vercel/production, where env vars
+  // are injected directly rather than read from a file.
+}
+
 const url = process.env.DATABASE_URL || "file:./data/shop.db";
 const authToken = process.env.DATABASE_AUTH_TOKEN;
+
+if (process.env.NODE_ENV !== 'production') {
+  console.log(`[db] connecting to: ${url.startsWith('file:') ? url : url.replace(/\/\/.*@/, '//***@')}`);
+}
 
 const client = createClient({
   url: url,
@@ -98,7 +112,38 @@ async function migrate(db: any) {
       FOREIGN KEY (orderId) REFERENCES orders(id),
       FOREIGN KEY (productId) REFERENCES products(id)
     );
+
+    CREATE TABLE IF NOT EXISTS product_variants (
+      id TEXT PRIMARY KEY,
+      productId TEXT NOT NULL,
+      attributeName TEXT NOT NULL,
+      value TEXT NOT NULL,
+      priceModifier REAL NOT NULL DEFAULT 0,
+      stock INTEGER NOT NULL DEFAULT 0,
+      image TEXT,
+      sortOrder INTEGER NOT NULL DEFAULT 0,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (productId) REFERENCES products(id)
+    );
   `);
+
+  // order_items gained variant-tracking columns after the original schema
+  // shipped. ALTER TABLE ADD COLUMN isn't idempotent in SQLite (there's no
+  // "IF NOT EXISTS" for columns), so guard each one against the "duplicate
+  // column" error a server that already has them would throw.
+  const orderItemColumnAdditions = [
+    'ALTER TABLE order_items ADD COLUMN variantId TEXT',
+    'ALTER TABLE order_items ADD COLUMN variantLabel TEXT',
+  ];
+  for (const stmt of orderItemColumnAdditions) {
+    try {
+      await db.exec(stmt);
+    } catch (err: any) {
+      if (!String(err?.message || err).toLowerCase().includes('duplicate column')) {
+        throw err;
+      }
+    }
+  }
 }
 
 // ---------- Types ----------
@@ -123,6 +168,22 @@ export type DBProduct = {
   reviewCount: number;
   featured: boolean;
   categoryId: string;
+  createdAt: string;
+  /** True if this product has one or more rows in product_variants. Only
+   *  populated by queries that join for it (getProducts, getRelatedProducts);
+   *  defaults to false elsewhere. */
+  hasVariants?: boolean;
+};
+
+export type DBVariant = {
+  id: string;
+  productId: string;
+  attributeName: string;
+  value: string;
+  priceModifier: number;
+  stock: number;
+  image: string | null;
+  sortOrder: number;
   createdAt: string;
 };
 
@@ -155,10 +216,24 @@ export type DBOrderItem = {
   productId: string;
   quantity: number;
   price: number;
+  /** Comma-joined product_variants ids actually purchased (or null for a plain, variant-less item). */
+  variantId: string | null;
+  /** Human-readable snapshot, e.g. "Color: Red, Size: XL", taken at order time so it survives later variant edits/deletes. */
+  variantLabel: string | null;
 };
 
 function rowToProduct(row: any): DBProduct {
-  return { ...row, featured: !!row.featured };
+  const { variantCount, ...rest } = row;
+  return { ...rest, featured: !!row.featured, hasVariants: Number(variantCount || 0) > 0 };
+}
+
+function rowToVariant(row: any): DBVariant {
+  return {
+    ...row,
+    priceModifier: Number(row.priceModifier) || 0,
+    stock: Number(row.stock) || 0,
+    sortOrder: Number(row.sortOrder) || 0,
+  };
 }
 
 // ---------- Categories ----------
@@ -230,32 +305,101 @@ export async function getProducts(filter: ProductFilter = {}): Promise<DBProduct
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   const limit = filter.limit ? `LIMIT ${filter.limit}` : '';
 
-  const sql = `SELECT p.* FROM products p ${joinCategory} ${where} ORDER BY ${orderBy} ${limit}`;
+  const sql = `SELECT p.*, (SELECT COUNT(*) FROM product_variants v WHERE v.productId = p.id) as variantCount
+               FROM products p ${joinCategory} ${where} ORDER BY ${orderBy} ${limit}`;
   const rows = await db.prepare(sql).all(...params);
   return rows.map(rowToProduct);
 }
 
-export async function getProductBySlug(slug: string): Promise<(DBProduct & { category: DBCategory }) | undefined> {
+export async function getProductBySlug(
+  slug: string
+): Promise<(DBProduct & { category: DBCategory; variants: DBVariant[] }) | undefined> {
   const db = await getDb();
   const row = await db.prepare('SELECT * FROM products WHERE slug = ?').get(slug) as any;
   if (!row) return undefined;
   const categoryPrepared = db.prepare('SELECT * FROM categories WHERE id = ?');
   const category = (await categoryPrepared.get(row.categoryId)) as unknown as DBCategory;
-  return { ...rowToProduct(row), category };
+  const variants = await getVariantsForProduct(row.id);
+  return { ...rowToProduct(row), category, variants };
 }
 
-export async function getProductById(id: string): Promise<DBProduct | undefined> {
+export async function getProductById(id: string): Promise<(DBProduct & { variants: DBVariant[] }) | undefined> {
   const db = await getDb();
   const row = await db.prepare('SELECT * FROM products WHERE id = ?').get(id) as any;
-  return row ? rowToProduct(row) : undefined;
+  if (!row) return undefined;
+  const variants = await getVariantsForProduct(id);
+  return { ...rowToProduct(row), variants };
 }
 
 export async function getRelatedProducts(categoryId: string, excludeId: string, limit = 5): Promise<DBProduct[]> {
   const db = await getDb();
   const rows = await db
-    .prepare('SELECT * FROM products WHERE categoryId = ? AND id != ? LIMIT ?')
+    .prepare(
+      `SELECT p.*, (SELECT COUNT(*) FROM product_variants v WHERE v.productId = p.id) as variantCount
+       FROM products p WHERE p.categoryId = ? AND p.id != ? LIMIT ?`
+    )
     .all(categoryId, excludeId, limit);
   return rows.map(rowToProduct);
+}
+
+// ---------- Product Variants ----------
+export async function getVariantsForProduct(productId: string): Promise<DBVariant[]> {
+  const db = await getDb();
+  const rows = await db
+    .prepare('SELECT * FROM product_variants WHERE productId = ? ORDER BY sortOrder ASC, createdAt ASC')
+    .all(productId);
+  return rows.map(rowToVariant);
+}
+
+export type VariantInput = {
+  attributeName: string;
+  value: string;
+  priceModifier?: number;
+  stock?: number;
+  image?: string | null;
+};
+
+/**
+ * Replaces all variants for a product with the given set. A full
+ * delete-and-reinsert is the simplest strategy that stays correct for an
+ * admin form where rows can be freely added, edited, and removed - there's
+ * no stable client-side id to diff against otherwise.
+ *
+ * Also keeps products.stock in sync as the sum of variant stock, so
+ * anything that only reads the flat product record (ProductCard's
+ * "out of stock" badge, the admin table, checkout's fallback stock check)
+ * keeps showing an accurate total without needing to know variants exist.
+ */
+export async function replaceVariantsForProduct(productId: string, variants: VariantInput[]): Promise<void> {
+  const db = await getDb();
+  await db.prepare('DELETE FROM product_variants WHERE productId = ?').run(productId);
+
+  let totalStock = 0;
+  for (let i = 0; i < variants.length; i++) {
+    const v = variants[i];
+    const stock = Math.max(0, Math.trunc(v.stock ?? 0));
+    totalStock += stock;
+    await db
+      .prepare(
+        `INSERT INTO product_variants (id, productId, attributeName, value, priceModifier, stock, image, sortOrder, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        randomUUID(),
+        productId,
+        v.attributeName.trim(),
+        v.value.trim(),
+        v.priceModifier ?? 0,
+        stock,
+        v.image?.trim() || null,
+        i,
+        new Date().toISOString()
+      );
+  }
+
+  if (variants.length > 0) {
+    await updateProduct(productId, { stock: totalStock } as Partial<DBProduct>);
+  }
 }
 
 export async function createProduct(data: {
@@ -267,7 +411,8 @@ export async function createProduct(data: {
   images: string;
   categoryId: string;
   featured?: boolean;
-}): Promise<DBProduct> {
+  variants?: VariantInput[];
+}): Promise<DBProduct & { variants: DBVariant[] }> {
   const db = await getDb();
   const id = randomUUID();
   const slug =
@@ -294,6 +439,10 @@ export async function createProduct(data: {
       data.categoryId,
       createdAt
     );
+
+  if (data.variants && data.variants.length) {
+    await replaceVariantsForProduct(id, data.variants);
+  }
 
   return (await getProductById(id))!;
 }
@@ -380,57 +529,110 @@ export async function updateOrderStatus(id: string, status: string): Promise<voi
 
 export async function createOrder(data: {
   userId: string;
-  items: { productId: string; quantity: number }[];
+  items: { productId: string; quantity: number; variantIds?: string[] }[];
   shippingName: string;
   shippingPhone: string;
   shippingAddress: string;
   paymentMethod: string;
 }) {
-  const db = await getDb();
-  await db.exec('BEGIN');
+  const tx = await client.transaction('write');
   try {
     let total = 0;
-    const resolvedItems: { productId: string; quantity: number; price: number; name: string }[] = [];
+    const resolvedItems: {
+      productId: string;
+      quantity: number;
+      price: number;
+      name: string;
+      variantId: string | null;
+      variantLabel: string | null;
+    }[] = [];
 
     for (const item of data.items) {
-      const product = (await db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId)) as any;
+      const result = await tx.execute({ sql: 'SELECT * FROM products WHERE id = ?', args: [item.productId] });
+      const product = result.rows[0] as any;
       if (!product) throw new Error(`Product not found: ${item.productId}`);
-      if (product.stock < item.quantity) {
+
+      // Never trust a client-supplied price - always recompute from the
+      // authoritative product (and variant) rows.
+      const variantIds = Array.isArray(item.variantIds) ? item.variantIds.filter(Boolean) : [];
+      const selectedVariants: any[] = [];
+      let unitPrice = product.price as number;
+
+      if (variantIds.length) {
+        for (const variantId of variantIds) {
+          const vResult = await tx.execute({
+            sql: 'SELECT * FROM product_variants WHERE id = ? AND productId = ?',
+            args: [variantId, item.productId],
+          });
+          const variant = vResult.rows[0] as any;
+          if (!variant) throw new Error(`A selected option for ${product.name} is no longer available.`);
+          if ((variant.stock as number) < item.quantity) {
+            throw new Error(
+              `Not enough stock for ${product.name} (${variant.attributeName}: ${variant.value}). Only ${variant.stock} left.`
+            );
+          }
+          selectedVariants.push(variant);
+          unitPrice += (variant.priceModifier as number) || 0;
+        }
+      } else if ((product.stock as number) < item.quantity) {
         throw new Error(`Not enough stock for ${product.name}. Only ${product.stock} left.`);
       }
-      total += product.price * item.quantity;
-      resolvedItems.push({ productId: product.id, quantity: item.quantity, price: product.price, name: product.name });
-      await db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?').run(item.quantity, product.id);
+
+      unitPrice = Math.max(0, unitPrice);
+      total += unitPrice * item.quantity;
+
+      resolvedItems.push({
+        productId: product.id,
+        quantity: item.quantity,
+        price: unitPrice,
+        name: product.name as string,
+        variantId: selectedVariants.length ? selectedVariants.map((v) => v.id).join(',') : null,
+        variantLabel: selectedVariants.length
+          ? selectedVariants.map((v) => `${v.attributeName}: ${v.value}`).join(', ')
+          : null,
+      });
+
+      // Keep the flat products.stock aggregate in sync either way, then
+      // additionally draw down the specific variant(s) purchased.
+      await tx.execute({ sql: 'UPDATE products SET stock = stock - ? WHERE id = ?', args: [item.quantity, product.id] });
+      for (const variant of selectedVariants) {
+        await tx.execute({
+          sql: 'UPDATE product_variants SET stock = stock - ? WHERE id = ?',
+          args: [item.quantity, variant.id],
+        });
+      }
     }
 
     const orderId = randomUUID();
     const createdAt = new Date().toISOString();
-    await db.prepare(
-      `INSERT INTO orders (id, userId, status, paymentMethod, total, shippingName, shippingPhone, shippingAddress, createdAt)
-       VALUES (?, 'PENDING', ?, ?, ?, ?, ?, ?, ?)`
-    ).run(orderId, data.paymentMethod, total, data.shippingName, data.shippingPhone, data.shippingAddress, createdAt);
+    await tx.execute({
+      sql: `INSERT INTO orders (id, userId, status, paymentMethod, total, shippingName, shippingPhone, shippingAddress, createdAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [orderId, data.userId, 'PENDING', data.paymentMethod, total, data.shippingName, data.shippingPhone, data.shippingAddress, createdAt],
+    });
 
     for (const item of resolvedItems) {
-      await db.prepare('INSERT INTO order_items (id, orderId, productId, quantity, price) VALUES (?, ?, ?, ?, ?)').run(
-        randomUUID(),
-        orderId,
-        item.productId,
-        item.quantity,
-        item.price
-      );
+      await tx.execute({
+        sql: 'INSERT INTO order_items (id, orderId, productId, quantity, price, variantId, variantLabel) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        args: [randomUUID(), orderId, item.productId, item.quantity, item.price, item.variantId, item.variantLabel],
+      });
     }
 
-    await db.exec('COMMIT');
+    await tx.commit();
     return { id: orderId, total };
   } catch (err) {
-    await db.exec('ROLLBACK');
+    await tx.rollback();
     throw err;
+  } finally {
+    tx.close();
   }
 }
 
 export async function resetDatabase(): Promise<void> {
   const db = await getDb();
-  await db.exec('DELETE FROM order_items; DELETE FROM orders; DELETE FROM products; DELETE FROM categories; DELETE FROM users;');
+  await db.exec(
+    'DELETE FROM order_items; DELETE FROM orders; DELETE FROM product_variants; DELETE FROM products; DELETE FROM categories; DELETE FROM users;'
+  );
 }
 
 export { getDb };

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
+import SafeImage from '@/components/SafeImage';
 import { Minus, Plus, Trash2, ShoppingBag } from 'lucide-react';
 import { useCartStore } from '@/lib/cart-store';
 import { formatPrice } from '@/lib/utils';
@@ -36,24 +36,25 @@ export default function CartPage() {
       <div className="grid md:grid-cols-3 gap-8">
         <div className="md:col-span-2 space-y-4">
           {items.map((item) => (
-            <div key={item.productId} className="flex gap-4 bg-white rounded-xl p-3 shadow-card">
+            <div key={item.key} className="flex gap-4 bg-white rounded-xl p-3 shadow-card">
               <div className="relative w-20 h-20 rounded-lg overflow-hidden bg-ink-50 shrink-0">
-                <Image src={item.image} alt={item.name} fill sizes="80px" className="object-cover" />
+                <SafeImage src={item.image} alt={item.name} fill sizes="80px" className="object-cover" />
               </div>
               <div className="flex-1 min-w-0">
                 <h3 className="text-sm font-medium text-ink-700 line-clamp-2">{item.name}</h3>
+                {item.variantLabel && <p className="text-xs text-ink-400 mt-0.5">{item.variantLabel}</p>}
                 <p className="font-mono text-sm text-ink-500 mt-1">{formatPrice(item.price)}</p>
                 <div className="flex items-center justify-between mt-2">
                   <div className="flex items-center border border-ink-100 rounded-full">
-                    <button onClick={() => updateQuantity(item.productId, item.quantity - 1)} className="p-1.5" aria-label="Decrease">
+                    <button onClick={() => updateQuantity(item.key, item.quantity - 1)} className="p-1.5" aria-label="Decrease">
                       <Minus size={12} />
                     </button>
                     <span className="w-7 text-center text-xs font-medium">{item.quantity}</span>
-                    <button onClick={() => updateQuantity(item.productId, item.quantity + 1)} className="p-1.5" aria-label="Increase">
+                    <button onClick={() => updateQuantity(item.key, item.quantity + 1)} className="p-1.5" aria-label="Increase">
                       <Plus size={12} />
                     </button>
                   </div>
-                  <button onClick={() => removeItem(item.productId)} className="text-ink-300 hover:text-spice transition-colors" aria-label="Remove item">
+                  <button onClick={() => removeItem(item.key)} className="text-ink-300 hover:text-spice transition-colors" aria-label="Remove item">
                     <Trash2 size={16} />
                   </button>
                 </div>

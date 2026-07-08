@@ -77,7 +77,7 @@ export default function CheckoutPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+          items: items.map((i) => ({ productId: i.productId, quantity: i.quantity, variantIds: i.variantIds })),
           ...form,
         }),
       });
@@ -168,8 +168,11 @@ export default function CheckoutPage() {
         <div className="bg-white rounded-xl p-5 shadow-card h-fit">
           <h2 className="font-display text-lg font-semibold text-ink mb-4">Order Summary</h2>
           {items.map((item) => (
-            <div key={item.productId} className="flex justify-between text-sm text-ink-500 mb-2">
-              <span className="line-clamp-1 pr-2">{item.name} × {item.quantity}</span>
+            <div key={item.key} className="flex justify-between text-sm text-ink-500 mb-2">
+              <span className="line-clamp-1 pr-2">
+                {item.name}
+                {item.variantLabel ? ` (${item.variantLabel})` : ''} × {item.quantity}
+              </span>
               <span className="font-mono shrink-0">{formatPrice(item.price * item.quantity)}</span>
             </div>
           ))}

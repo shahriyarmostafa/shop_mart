@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { formatPrice } from '@/lib/utils';
-import { Plus, Trash2, Package, ShoppingBag, DollarSign } from 'lucide-react';
+import { toast } from '@/lib/toast-store';
+import SafeImage from '@/components/SafeImage';
+import { Plus, Trash2, Pencil, Package, ShoppingBag, DollarSign } from 'lucide-react';
 
 type Product = {
   id: string;
@@ -13,38 +14,81 @@ type Product = {
   price: number;
   stock: number;
   images: string;
-  category: { name: string };
+  category?: { name: string };
 };
 
 type Order = { id: string; total: number; status: string };
+
+async function safeJson(res: Response): Promise<any> {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
 
 export default function AdminPage() {
   const { data: session, status } = useSession();
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   const isAdmin = status === 'authenticated' && (session?.user as any)?.role === 'ADMIN';
 
   useEffect(() => {
-    if (isAdmin) {
-      Promise.all([
-        fetch('/api/products').then((r) => r.json()),
-        fetch('/api/orders?all=true').then((r) => r.json()),
-      ]).then(([p, o]) => {
+    if (!isAdmin) {
+      if (status !== 'loading') setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const [productsRes, ordersRes] = await Promise.all([
+          fetch('/api/products'),
+          fetch('/api/orders?all=true'),
+        ]);
+        const [p, o] = await Promise.all([safeJson(productsRes), safeJson(ordersRes)]);
+        if (cancelled) return;
+
+        if (!productsRes.ok) {
+          setLoadError(p?.error || 'Failed to load products.');
+        }
         setProducts(Array.isArray(p) ? p : []);
         setOrders(Array.isArray(o) ? o : []);
-        setLoading(false);
-      });
-    } else if (status !== 'loading') {
-      setLoading(false);
-    }
+      } catch {
+        if (!cancelled) {
+          setLoadError('Network error while loading the dashboard.');
+          toast.error('Network error while loading the dashboard.');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isAdmin, status]);
 
   async function handleDelete(id: string) {
     if (!confirm('Delete this product?')) return;
-    await fetch(`/api/products/${id}`, { method: 'DELETE' });
+    const previous = products;
     setProducts((p) => p.filter((x) => x.id !== id));
+    try {
+      const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
+      const data = await safeJson(res);
+      if (!res.ok) {
+        setProducts(previous);
+        toast.error(data?.error || 'Failed to delete product.');
+        return;
+      }
+      toast.success('Product deleted.');
+    } catch {
+      setProducts(previous);
+      toast.error('Network error. Product was not deleted.');
+    }
   }
 
   if (status === 'loading' || loading) {
@@ -73,6 +117,10 @@ export default function AdminPage() {
           <Plus size={18} /> Add Product
         </Link>
       </div>
+
+      {loadError && (
+        <div className="bg-spice/10 text-spice text-sm rounded-lg px-4 py-2.5 mb-6">{loadError}</div>
+      )}
 
       <div className="grid sm:grid-cols-3 gap-4 mb-8">
         <div className="bg-white rounded-xl p-5 shadow-card flex items-center gap-4">
@@ -115,20 +163,36 @@ export default function AdminPage() {
               <tr key={p.id} className="border-t border-ink-50">
                 <td className="px-4 py-3 flex items-center gap-3">
                   <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-ink-50 shrink-0">
-                    <Image src={p.images.split(',')[0]} alt={p.name} fill sizes="40px" className="object-cover" />
+                    <SafeImage src={p.images?.split(',')[0]} alt={p.name} fill sizes="40px" className="object-cover" />
                   </div>
                   <span className="line-clamp-1">{p.name}</span>
                 </td>
-                <td className="px-4 py-3 text-ink-400">{p.category.name}</td>
+                <td className="px-4 py-3 text-ink-400">{p.category?.name ?? '—'}</td>
                 <td className="px-4 py-3 font-mono">{formatPrice(p.price)}</td>
                 <td className="px-4 py-3">{p.stock}</td>
                 <td className="px-4 py-3 text-right">
-                  <button onClick={() => handleDelete(p.id)} className="text-ink-300 hover:text-spice transition-colors" aria-label="Delete">
-                    <Trash2 size={16} />
-                  </button>
+                  <div className="flex items-center justify-end gap-3">
+                    <Link
+                      href={`/admin/products/${p.id}/edit`}
+                      className="text-ink-300 hover:text-ink transition-colors"
+                      aria-label="Edit"
+                    >
+                      <Pencil size={16} />
+                    </Link>
+                    <button onClick={() => handleDelete(p.id)} className="text-ink-300 hover:text-spice transition-colors" aria-label="Delete">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
+            {products.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-ink-300">
+                  No products yet. Add your first one to get started.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

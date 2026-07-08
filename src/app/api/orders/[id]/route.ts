@@ -10,7 +10,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 
   const { status } = await req.json();
-  updateOrderStatus(params.id, status);
+  await updateOrderStatus(params.id, status);
 
   return NextResponse.json({ success: true });
 }

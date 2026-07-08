@@ -19,7 +19,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Shipping details are required.' }, { status: 400 });
     }
 
-    const order = createOrder({
+    const order = await createOrder({
       userId: (session.user as any).id,
       items,
       shippingName,

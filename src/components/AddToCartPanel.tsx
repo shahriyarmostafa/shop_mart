@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Minus, Plus, ShoppingCart, Zap } from 'lucide-react';
 import { useCartStore } from '@/lib/cart-store';
@@ -11,19 +11,29 @@ type Props = {
   price: number;
   image: string;
   stock: number;
+  /** Ids of the currently selected variant(s), if this product has them. */
+  variantIds?: string[];
+  /** Human-readable snapshot of the current selection, e.g. "Color: Red". */
+  variantLabel?: string;
 };
 
-export default function AddToCartPanel({ productId, name, price, image, stock }: Props) {
+export default function AddToCartPanel({ productId, name, price, image, stock, variantIds, variantLabel }: Props) {
   const [qty, setQty] = useState(1);
   const addItem = useCartStore((s) => s.addItem);
   const router = useRouter();
 
+  // If the shopper switches to a variant with less stock than their current
+  // quantity selection (or that just sold out), bring quantity back in line.
+  useEffect(() => {
+    setQty((q) => Math.min(Math.max(q, 1), Math.max(stock, 1)));
+  }, [stock]);
+
   function handleAdd() {
-    addItem({ productId, name, price, image, stock }, qty);
+    addItem({ productId, name, price, image, stock, variantIds, variantLabel }, qty);
   }
 
   function handleBuyNow() {
-    addItem({ productId, name, price, image, stock }, qty);
+    addItem({ productId, name, price, image, stock, variantIds, variantLabel }, qty);
     router.push('/checkout');
   }
 

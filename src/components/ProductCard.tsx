@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
-import { Star, ShoppingCart } from 'lucide-react';
+import SafeImage from '@/components/SafeImage';
+import { Star, ShoppingCart, SlidersHorizontal } from 'lucide-react';
 import { formatPrice, discountPercent } from '@/lib/utils';
 import { useCartStore } from '@/lib/cart-store';
 
@@ -16,6 +16,7 @@ type Product = {
   rating: number;
   reviewCount: number;
   stock: number;
+  hasVariants?: boolean;
 };
 
 export default function ProductCard({ product }: { product: Product }) {
@@ -26,7 +27,7 @@ export default function ProductCard({ product }: { product: Product }) {
   return (
     <div className="group bg-white rounded-xl overflow-hidden shadow-card hover:shadow-lg transition-shadow border border-ink-50">
       <Link href={`/product/${product.slug}`} className="block relative aspect-square overflow-hidden bg-ink-50">
-        <Image
+        <SafeImage
           src={image}
           alt={product.name}
           fill
@@ -69,19 +70,30 @@ export default function ProductCard({ product }: { product: Product }) {
               </span>
             )}
           </div>
-          <button
-            disabled={product.stock === 0}
-            onClick={() =>
-              addItem(
-                { productId: product.id, name: product.name, price: product.price, image, stock: product.stock },
-                1
-              )
-            }
-            className="p-2 rounded-full bg-marigold-400 hover:bg-marigold-500 disabled:bg-ink-100 disabled:cursor-not-allowed text-ink transition-colors"
-            aria-label="Add to cart"
-          >
-            <ShoppingCart size={16} />
-          </button>
+          {product.hasVariants ? (
+            <Link
+              href={`/product/${product.slug}`}
+              className="p-2 rounded-full bg-marigold-400 hover:bg-marigold-500 text-ink transition-colors"
+              aria-label="Select options"
+              title="Select options"
+            >
+              <SlidersHorizontal size={16} />
+            </Link>
+          ) : (
+            <button
+              disabled={product.stock === 0}
+              onClick={() =>
+                addItem(
+                  { productId: product.id, name: product.name, price: product.price, image, stock: product.stock },
+                  1
+                )
+              }
+              className="p-2 rounded-full bg-marigold-400 hover:bg-marigold-500 disabled:bg-ink-100 disabled:cursor-not-allowed text-ink transition-colors"
+              aria-label="Add to cart"
+            >
+              <ShoppingCart size={16} />
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -12,7 +12,13 @@ type Order = {
   total: number;
   paymentMethod: string;
   createdAt: string;
-  items: { id: string; quantity: number; price: number; product: { name: string; images: string } }[];
+  items: {
+    id: string;
+    quantity: number;
+    price: number;
+    variantLabel: string | null;
+    product: { name: string; images: string };
+  }[];
 };
 
 const statusColor: Record<string, string> = {
@@ -80,7 +86,10 @@ export default function OrdersPage() {
               <div className="border-t border-ink-50 pt-3 space-y-1.5">
                 {order.items.map((item) => (
                   <div key={item.id} className="flex justify-between text-sm text-ink-500">
-                    <span className="line-clamp-1 pr-2">{item.product.name} × {item.quantity}</span>
+                    <span className="line-clamp-1 pr-2">
+                      {item.product.name}
+                      {item.variantLabel ? ` (${item.variantLabel})` : ''} × {item.quantity}
+                    </span>
                     <span className="font-mono shrink-0">{formatPrice(item.price * item.quantity)}</span>
                   </div>
                 ))}
