@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { getCategoriesWithCounts, createCategory } from '@/lib/db';
 
 export async function GET() {
@@ -8,6 +10,11 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session || (session.user as any)?.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
+    }
+
     const { name, icon } = await req.json();
     if (!name) return NextResponse.json({ error: 'Name is required.' }, { status: 400 });
 

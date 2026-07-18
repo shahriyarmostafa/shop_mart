@@ -1,7 +1,28 @@
-node_modules/
-.next/
-data/shop.db
-data/shop.db-wal
-data/shop.db-shm
+﻿# dependencies
+/node_modules
+
+# next.js build output
+/.next/
+/out/
+tsconfig.tsbuildinfo
+
+# environment variables
+.env
 .env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# user-uploaded content (runtime data, not source)
+/public/uploads/*
+!/public/uploads/.gitkeep
+
+# local sqlite db files, if used
+*.db
+*.sqlite
+*.sqlite3
+
+# misc
+.DS_Store
+*.log
 npm-debug.log*

@@ -38,9 +38,13 @@ export const useCartStore = create<CartState>()(
       addItem: (item, qty = 1) => {
         const key = keyFor(item.productId, item.variantIds);
         const items = [...get().items];
-        const existing = items.find((i) => i.key === key);
-        if (existing) {
-          existing.quantity = Math.min(existing.quantity + qty, existing.stock);
+        const existingIndex = items.findIndex((i) => i.key === key);
+        if (existingIndex !== -1) {
+          const existing = items[existingIndex];
+          items[existingIndex] = {
+            ...existing,
+            quantity: Math.min(existing.quantity + qty, existing.stock),
+          };
         } else {
           items.push({ ...item, key, quantity: Math.min(qty, item.stock) });
         }
